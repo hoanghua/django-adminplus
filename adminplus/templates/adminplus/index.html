@@ -1,12 +1,19 @@
 {% extends "admin/index.html" %}
 
+{% block extrastyle %}
+{{ block.super }}
+<style type="text/css">
+    tr.model-custom-link td { display: none; }
+</style>
+{% endblock %}
+
 {% block sidebar %}
   {{ block.super }}
 
   {% if custom_list %}
   <div class="module" style="float: left; width: 498px">
     <table style="width: 100%">
-      <caption>Custom Views</caption>
+      <caption>{{ custom_view|default:"Custom Views" }}</caption>
       <tbody>
         {% for path, name in custom_list %}
           <tr><td><a href="{{ path }}">{{ name }}</a></td></tr>

@@ -1,5 +1,6 @@
 from django.contrib.admin.sites import AdminSite
 from django.utils.text import capfirst
+from django.utils.translation import ugettext_lazy as _
 
 
 class AdminPlusMixin(object):
@@ -12,7 +13,7 @@ class AdminPlusMixin(object):
         return super(AdminPlusMixin, self).__init__(*args, **kwargs)
 
     def register_view(self, path, name=None, urlname=None, visible=True,
-                      view=None):
+                      view=None, app=None):
         """Add a custom admin view. Can be used as a function or a decorator.
 
         * `path` is the path in the admin where the view will live, e.g.
@@ -24,13 +25,14 @@ class AdminPlusMixin(object):
         * `visible` is a boolean to set if the custom view should be visible in
             the admin dashboard or not.
         * `view` is any view function you can imagine.
+        * `app` is how you want to name the app that hold custom views.
         """
         if view is not None:
-            self.custom_views.append((path, view, name, urlname, visible))
+            self.custom_views.append((path, view, name, urlname, visible, app))
             return
 
         def decorator(fn):
-            self.custom_views.append((path, fn, name, urlname, visible))
+            self.custom_views.append((path, fn, name, urlname, visible, app))
             return fn
         return decorator
 
@@ -38,7 +40,7 @@ class AdminPlusMixin(object):
         """Add our custom views to the admin urlconf."""
         urls = super(AdminPlusMixin, self).get_urls()
         from django.conf.urls import patterns, url
-        for path, view, name, urlname, visible in self.custom_views:
+        for path, view, name, urlname, visible, app in self.custom_views:
             urls = patterns(
                 '',
                 url(r'^%s$' % path, self.admin_view(view), name=urlname),
@@ -47,22 +49,44 @@ class AdminPlusMixin(object):
 
     def index(self, request, extra_context=None):
         """Make sure our list of custom views is on the index page."""
-        if not extra_context:
-            extra_context = {}
-        custom_list = []
-        for path, view, name, urlname, visible in self.custom_views:
-            if visible is True:
-                if name:
-                    custom_list.append((path, name))
-                else:
-                    custom_list.append((path, capfirst(view.__name__)))
+        ret = super(AdminPlusMixin, self).index(request, extra_context)
+        ret.context_data
 
-        # Sort views alphabetically.
-        custom_list.sort(key=lambda x: x[1])
-        extra_context.update({
-            'custom_list': custom_list
-        })
-        return super(AdminPlusMixin, self).index(request, extra_context)
+        app_dict = {}
+        for path, view, name, urlname, visible, app in self.custom_views:
+            if visible is True:
+                name = name or capfirst(view.__name__)
+                app  = unicode(app or _('Custom Views'))
+
+                app_dict.setdefault(app, {
+                    'app_label': app,
+                    'app_url': None,
+                    'has_module_perms': True,
+                    'models': [],
+                    'name': capfirst(app)
+                })
+                app_dict[app]['models'].append({
+                    'add_url': None,
+                    'admin_url': path,
+                    'name': name,
+                    'object_name': 'custom-link',
+                    'perms': {'add': None,
+                                'change': False,
+                                'delete': None},
+                })
+        
+        app_list = ret.context_data.get('app_list', [])
+        for app in app_list:
+            app_label  = app.get('app_label')
+            custom_app = app_dict.get(app_label)
+            if custom_app:
+                app['models'] = app.get('models', []) + custom_app.get('models')
+                app['models'].sort(key=lambda x: x['name'])
+                app_dict.pop(app_label)
+
+        ret.context_data['app_list'] = app_list + app_dict.values()
+
+        return ret
 
 
 class AdminSitePlus(AdminPlusMixin, AdminSite):
